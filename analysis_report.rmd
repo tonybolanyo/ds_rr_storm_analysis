@@ -26,6 +26,11 @@ It also load all necessary libraries at top of the analysis.
 ```{r "Basic settings"}
 echo = TRUE
 options(scipen = 1)
+
+require(ggplot2, quietly = TRUE)
+require(dplyr, quietly = TRUE)
+require(gridExtra, quietly = TRUE)
+
 ```
 
 
@@ -35,7 +40,7 @@ options(scipen = 1)
 
 ### Loading Data from File ###
 
-```{r "Loading data from file"}
+```{r "Loading data from file", cache = TRUE}
 # First we need download data
 dataurl <- "http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
 datafile <- "StormData.csv.bz2"
@@ -61,7 +66,7 @@ With the objective of asking this two questions:
 Only eight columns of the 37 in the original dataset are relevant to our analysis, in accordance with the definition in [4] LAYOUT Storm Events Database May 2008. 
 
 Column name | Description
----------------------------------------------------------------
+----------- | -------------------------------------------------
  BGN_DATE   | Date the storm event began
  EVTYPE     | Type of storm event. Take note that similar storm events can be listed using different wording e.g. “coastal flood” and “coastal flooding.” Take note of this if you want to run a query grouping by event type.
  FATALITIES | Number directly killed
@@ -71,17 +76,155 @@ Column name | Description
  CROPDMG    | Crop damage in whole numbers and hundredths
  CROPDMGEXP | A multiplier where Hundred (H), Thousand (K), Million (M), Billion (B)
 
+```{r "Tyding data"}
+# select only relevant columns
+noaa <- storm[,c("BGN_DATE", "EVTYPE", "FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP", "CROPDMG", "CROPDMGEXP")]
 
-There should be a section titled Data Processing which describes (in words and code) how the data were loaded into R and processed for analysis. In particular, your analysis must start from the raw CSV file containing the data. You cannot do any preprocessing outside the document. If preprocessing is time-consuming you may consider using the cache = TRUE option for certain code chunks.
+# convert bgn_date to date class
+noaa$BGN_DATE <- as.Date(noaa$BGN_DATE, format = "%m/%d/%Y %H:%M:%S")
 
+# add a year column
+noaa <- noaa %>% mutate(year = as.numeric(format(BGN_DATE, "%Y")))
+```
 
+We make an histogram with the number of event by year and seee the distribution.
 
+```{r "Number of events by year"}
+p <- ggplot(noaa, aes(x = (year)))
+p <- p + labs( x = "Year", y = "Num. of events", title = "Histogram: Number of events registered by year")
+p <- p + geom_histogram(binwidth = 5 ,aes(fill = ..count..))
+p
+```
+
+To filter relevant data we can look at the histogram and we can see that before 1995, registered events are less that after 1995, so we decide filter data and only look at events registered **after** 1995. We're trying to analyze impact on public health and economy so only events with fatalities, injuries, damages and crops are relevant.
+
+```{r "Filter out events before 1995"}
+noaa_recent <- noaa %>% filter(year > 1995) %>% filter(FATALITIES > 0 | INJURIES > 0 | PROPDMG > 0 | CROPDMG > 0)
+```
+
+### Cleaning data ###
+
+The damages and crop estimates are not on same scale so, we need convert them so we can compare or make calculations correctly. We define a function to identify scale and create two new columns ```PROPDMGTOTAL``` to store property damage total cost and ```CROPDMGTOTAL``` to store crop damage total cost.
+
+```{r "Change scale of estimates"}
+apply_factor <- function(value,factor) {
+  if (factor == "") {
+    value
+  } else if (factor == "1") {
+    value * 10
+  } else if (factor == "H" | factor == "h") {
+    value * 100
+  } else if (factor == "K" | factor == "k") {
+    value * 1000
+  } else if (factor == "M" | factor == "m") {
+    value * 1e+06
+  } else if (factor == "B" | factor == "b") {
+    value * 1e+09
+  } else 0
+}
+noaa_recent$PROPDMGTOTAL <- mapply(apply_factor, noaa_recent$PROPDMG, noaa_recent$PROPDMGEXP)
+noaa_recent$CROPDMGTOTAL <- mapply(apply_factor, noaa_recent$CROPDMG, noaa_recent$CROPDMGEXP)
+```
+
+```{r "Count different event types"}
+types <- summarise(noaa_recent, types = n_distinct(EVTYPE))
+```
+
+According to the documentation (see 2.1.1 Storm Data Event Table in [2]) there are only 48 event types referenced. Counting different ```EVTYPE``` values in dataset after filter by year shows ```r types$types``` values. We try to standarize theese values.
+
+```{r "Standarize event type values"}
+# convert all tu uppercase
+noaa_recent$EVTYPE <- toupper(noaa_recent$EVTYPE)
+
+# remove punctuation symbols
+noaa_recent$EVTYPE <- gsub("[[:punct:]]"," ",noaa_recent$EVTYPE)
+```
+
+On this first report I decide not to cleanup ```EVTYPE``` and leave it for a second more detailed report.
+
+### Grouping data and make calculations ###
+
+To see impact on property and crop damages, we calculate the average by type ob event:
+
+```{r "Damage calculations"}
+noaa_results <- noaa_recent %>% group_by(EVTYPE) %>%
+    summarise(fatalities = sum(FATALITIES),
+             injuries = sum(INJURIES),
+             propdmgtotal = sum(PROPDMGTOTAL),
+             cropdmgtotal = sum(CROPDMGTOTAL)) %>%
+             mutate(totalcost = propdmgtotal + cropdmgtotal)
+```
 
 ## Results ##
 
-There should be a section titled Results in which your results are presented.
+### Human injuries and fatalities ###
+
+Look for the top ten events with injuries and top ten with fatalities.
+
+```{r "Top ten human damages"}
+top_injuries <- head(noaa_results %>%
+    select(EVTYPE,injuries) %>%
+    arrange(desc(injuries)),10)
+
+top_fatalities <- head(noaa_results %>%
+    select(EVTYPE,fatalities) %>%
+    arrange(desc(fatalities)),10)
+
+top_injuries
+
+top_fatalities
+
+p <- ggplot(top_injuries, aes(x = reorder(EVTYPE,-injuries), y = injuries))
+p <- p + geom_bar(stat = "identity", fill="#316795") 
+p <- p + labs(title = "Top ten events with more human injuries")
+p <- p + labs(x = "Type of event", y = "Number of people directly injured")
+p <- p + theme(axis.text.x = element_text(angle = 35, hjust = 1))
+
+q <- ggplot(top_fatalities, aes(x = reorder(EVTYPE, -fatalities), y = fatalities))
+q <- q + geom_bar(stat = "identity", fill="#316795")
+q <- q + labs(title = "Top ten events with more human fatalities")
+q <- q + labs(x = "Type of event", y = "Number of people directly killed")
+q <- q + theme(axis.text.x = element_text(angle = 35, hjust = 1))
+
+grid.arrange(p, q, ncol = 2, widths=7:7, main = "Human Fatalities and Injuries by Type of Event")
+```
+
+### Property and crop damage ###
+
+Look for the top ten events with more impact on economy
+
+```{r "Top ten damage cost"}
+top_damage <- head(noaa_results %>%
+    select(EVTYPE,totalcost) %>%
+    arrange(desc(totalcost)),10)
+
+top_damage <- top_damage %>%
+    mutate(totalcost = round(totalcost / 10^6,0))
+
+top_damage
+
+d <- ggplot(top_damage, aes(x = reorder(EVTYPE,-totalcost), y = totalcost))
+d <- d + geom_bar(stat = "identity", fill="#316795")
+d <- d + labs(title = "Top ten events with more economy impact")
+d <- d + labs(x = "Type of event", y = "Million dollars")
+d <- d + theme(axis.text.x = element_text(angle = 35, hjust = 1))
+
+d
+
+```
+
+## Conclusion ##
+
+From the data and graphs above we can conclude that tornado, flood and excesive heat have a major impact on health and economy.
+
+## Apendix I: R Environment ##
 
 
+```{r "R Environment"}
+
+sessionInfo()
+
+```
 
 
 ## References ##
@@ -91,5 +234,4 @@ There should be a section titled Results in which your results are presented.
 - [2] National Weather Service [Storm Data Documentation](http://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf).
 - [3] National Climatic Data Center [Storm Events FAQ](http://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf).
 - [4] [LAYOUT Storm Events Database May 2008](http://ire.org/media/uploads/files/datalibrary/samplefiles/Storm%20Events/layout08.doc)
-
 
