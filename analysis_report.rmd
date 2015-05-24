@@ -1,0 +1,70 @@
+---
+title: "Severe Weather Events Impact on Public Health and Economics Analysis Report"
+author: "Tony G. Bolaño"
+date: "Sunday, May 24, 2015"
+output: html_document
+---
+
+
+
+
+## Summary ##
+
+This report analyzes the impact of severe weather events on public health and economics for communities and municipalities. The analysis is based upon the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database which tracks characteristics of major storms and weather events, estimates fatalities, injuries and property damage in the U.S.A. between year 1950 and 2011. More recent years should be considered more complete.
+
+
+
+
+## Basic Settings
+
+By default all code for the analysis is shown in the document and we prevent scientific notation for numbers.
+
+It also load all necessary libraries at top of the analysis.
+
+```{r "Basic settings"}
+echo = TRUE
+options(scipen = 1)
+```
+
+
+
+
+## Data Proccessing ##
+
+### Loading Data from File ###
+
+```{r "Loading data from file"}
+# First we need download data
+dataurl <- "http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+datafile <- "StormData.csv.bz2"
+
+if (!file.exists(dataurl)) {
+    download.file(url = dataurl, destfile = datafile)
+}
+
+# R can read csv files form bzip compressed files directly so
+# we don't need uncompress the file
+
+storm <- read.csv(datafile)
+```
+
+There should be a section titled Data Processing which describes (in words and code) how the data were loaded into R and processed for analysis. In particular, your analysis must start from the raw CSV file containing the data. You cannot do any preprocessing outside the document. If preprocessing is time-consuming you may consider using the cache = TRUE option for certain code chunks.
+
+
+
+
+## Results ##
+
+There should be a section titled Results in which your results are presented.
+
+
+## References ##
+
+About data used in this analysis:
+
+- [Original data file](http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2).
+- National Weather Service [Storm Data Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf).
+- National Climatic Data Center [Storm Events FAQ](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf).
+
+
+
